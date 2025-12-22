@@ -1,15 +1,15 @@
-const db = new Dexie("ImageStorageDB");
+const db = new Dexie("ImageVaultDB");
 db.version(2).stores({
-  images: "id",
+  images: "id, uploaded",
   settings: "key"
 });
 
 const MAX_IMAGES = 6;
+const AUTO_LOCK_MINUTES = 1; // Changed to 1 minute for testing
 
 // Elements
 const uploadButton = document.getElementById("uploadButton");
 const fileInput = document.getElementById("fileInput");
-const customUploadLabel = document.getElementById("customUploadLabel");
 const gallery = document.getElementById("gallery");
 const emptyState = document.getElementById("emptyState");
 const imageCount = document.getElementById("imageCount");
@@ -18,6 +18,7 @@ const storageText = document.getElementById("storageText");
 const maxImages = document.getElementById("maxImages");
 const uploadMessage = document.getElementById("uploadMessage");
 const privacyStatus = document.getElementById("privacyStatus");
+const privacyTimer = document.getElementById("privacyTimer");
 
 const privacyToggle = document.getElementById("privacyToggle");
 const passwordContainer = document.getElementById("passwordContainer");
@@ -37,36 +38,66 @@ const notificationText = document.getElementById("notificationText");
 
 let privacyMode = true;
 let privacyLocked = false;
-let isSendingImage = false; // Flag to prevent multiple sends
+let isSendingImage = false;
+let unlockTimer = null;
+let timeLeft = AUTO_LOCK_MINUTES * 60; // seconds
 
-// Initialize
-document.addEventListener('DOMContentLoaded', async () => {
-  maxImages.textContent = MAX_IMAGES;
-  await checkPassword();
-  await checkPrivacyExpiration(); // 🔹 check if unlock expired
-  await loadGallery();
-  updateUIForPrivacyMode();
+// Prevent right-click context menu
+document.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  showNotification("Right-click is disabled for security", "warning");
+  return false;
 });
 
-// Events
-fileInput.addEventListener("change", handleFileUpload);
+// Prevent keyboard shortcuts for dev tools
+document.addEventListener('keydown', (e) => {
+  // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U
+  if (
+    e.key === 'F12' ||
+    (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+    (e.ctrlKey && e.key === 'u')
+  ) {
+    e.preventDefault();
+    showNotification("Developer tools are disabled for security", "warning");
+    return false;
+  }
+  
+  // Escape key to close password modals
+  if (e.key === 'Escape') {
+    if (passwordContainer.style.display === 'block') {
+      privacyToggle.checked = false;
+      privacyMode = false;
+      privacyLocked = false;
+      passwordContainer.style.display = 'none';
+      loadGallery();
+      updateUIForPrivacyMode();
+    }
+    
+    if (setPasswordContainer.style.display === 'block') {
+      setPasswordContainer.style.display = 'none';
+      newPasswordInput.value = "";
+      
+      if (privacyToggle.checked) {
+        privacyToggle.checked = false;
+      }
+    }
+  }
+  
+  // Enter key in password inputs
+  if (e.key === 'Enter') {
+    if (document.activeElement === privacyPasswordInput) {
+      privacySubmit.click();
+    } else if (document.activeElement === newPasswordInput) {
+      setPasswordBtn.click();
+    }
+  }
+});
 
 // Show notification
 function showNotification(message, type = "info") {
   notificationText.textContent = message;
   notification.className = "notification";
-  
-  // Set color based on type
-  if (type === "success") {
-    notification.style.background = "linear-gradient(90deg, #4CAF50, #66BB6A)";
-  } else if (type === "error") {
-    notification.style.background = "linear-gradient(90deg, #ff6b6b, #ff8e8e)";
-  } else if (type === "warning") {
-    notification.style.background = "linear-gradient(90deg, #FF9800, #FFB74D)";
-  } else {
-    notification.style.background = "linear-gradient(90deg, #4a6ee0, #6a8cff)";
-  }
-  
+  notification.classList.add(type);
   notification.classList.add("show");
   
   setTimeout(() => {
@@ -74,38 +105,85 @@ function showNotification(message, type = "info") {
   }, 3000);
 }
 
+// Format time
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Start unlock timer
+function startUnlockTimer() {
+  if (unlockTimer) {
+    clearInterval(unlockTimer);
+  }
+  
+  timeLeft = AUTO_LOCK_MINUTES * 60;
+  updateTimerDisplay();
+  
+  unlockTimer = setInterval(() => {
+    timeLeft--;
+    updateTimerDisplay();
+    
+    if (timeLeft <= 0) {
+      clearInterval(unlockTimer);
+      lockPrivacyMode();
+    }
+  }, 1000);
+}
+
+// Update timer display
+function updateTimerDisplay() {
+  if (privacyMode) {
+    privacyTimer.textContent = "Locked";
+  } else {
+    privacyTimer.textContent = `Auto-lock in ${formatTime(timeLeft)}`;
+  }
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', async () => {
+  maxImages.textContent = MAX_IMAGES;
+  await checkPassword();
+  await checkPrivacyExpiration();
+  await loadGallery();
+  updateUIForPrivacyMode();
+  
+  // Start timer if unlocked
+  if (!privacyMode) {
+    startUnlockTimer();
+  }
+});
+
+// Events
+uploadButton.addEventListener("click", () => {
+  if (privacyMode) {
+    showNotification("Unlock Privacy Mode to upload images", "error");
+    return;
+  }
+  fileInput.click();
+});
+
+fileInput.addEventListener("change", handleFileUpload);
+
 // Update UI based on privacy mode
 function updateUIForPrivacyMode() {
   const privacyStatusSpan = privacyStatus.querySelector("span");
+  uploadButton.classList.toggle("disabled", privacyMode);
 
   if (privacyMode) {
     // Privacy mode is active
     privacyStatusSpan.textContent = "Active";
     privacyStatus.classList.add("active");
     uploadMessage.textContent = "Privacy Mode locked. Unlock to access images.";
-    uploadMessage.style.color = "#ff6b6b";
-    
-    // Disable upload area
-    customUploadLabel.classList.add("disabled");
-    customUploadLabel.style.pointerEvents = "none";
-    customUploadLabel.querySelector(".upload-icon i").style.color = "#ccc";
-    customUploadLabel.querySelector(".upload-text h3").style.color = "#ccc";
-    customUploadLabel.querySelector(".upload-text p").style.color = "#ccc";
-  } 
-  
-  else {
+    uploadMessage.style.color = "#f87171";
+    privacyTimer.textContent = "Locked";
+  } else {
     // Privacy mode is inactive
     privacyStatusSpan.textContent = "Inactive";
     privacyStatus.classList.remove("active");
     uploadMessage.textContent = "Images unlocked. You may select and inject.";
-    uploadMessage.style.color = "#666";
-    
-    // Enable upload area
-    customUploadLabel.classList.remove("disabled");
-    customUploadLabel.style.pointerEvents = "auto";
-    customUploadLabel.querySelector(".upload-icon i").style.color = "#4a6ee0";
-    customUploadLabel.querySelector(".upload-text h3").style.color = "#2a3f7b";
-    customUploadLabel.querySelector(".upload-text p").style.color = "#7a8bc8";
+    uploadMessage.style.color = "#94a3b8";
   }
 }
 
@@ -120,16 +198,15 @@ async function updateStorageIndicator() {
   
   // Change color based on storage level
   if (percentage >= 90) {
-    storageFill.style.background = "linear-gradient(90deg, #ff6b6b, #ff8e8e)";
+    storageFill.style.background = "linear-gradient(90deg, #ef4444, #f87171)";
   } else if (percentage >= 70) {
-    storageFill.style.background = "linear-gradient(90deg, #FF9800, #FFB74D)";
+    storageFill.style.background = "linear-gradient(90deg, #f59e0b, #fbbf24)";
   } else {
-    storageFill.style.background = "linear-gradient(90deg, #4a6ee0, #6a8cff)";
+    storageFill.style.background = "linear-gradient(90deg, #3b82f6, #8b5cf6)";
   }
 }
 
 async function handleFileUpload(e) {
-  // Check if upload is allowed
   if (privacyMode) {
     showNotification("Cannot upload images in Privacy Mode", "error");
     fileInput.value = "";
@@ -147,7 +224,7 @@ async function handleFileUpload(e) {
 
   if (files.length > available) {
     showNotification(`Only ${available} more image(s) can be added.`, "warning");
-    files.length = available; // Truncate the array
+    files.length = available;
   }
 
   const filesToUpload = files.slice(0, available);
@@ -156,7 +233,6 @@ async function handleFileUpload(e) {
   
   showNotification(`Uploading ${filesToUpload.length} image(s)...`, "info");
   
-  // Upload each file sequentially
   for (let i = 0; i < filesToUpload.length; i++) {
     await new Promise(resolve => {
       setTimeout(async () => {
@@ -166,7 +242,6 @@ async function handleFileUpload(e) {
     });
   }
   
-  // Clear file input
   fileInput.value = "";
 }
 
@@ -205,19 +280,10 @@ async function loadGallery() {
   const images = await db.images.toArray();
   gallery.innerHTML = "";
 
-  // Update storage indicator
   await updateStorageIndicator();
 
-  // Only show images based on privacy mode
-  // const visibleImages = images.filter(img => {
-  //   return privacyMode ? true : !img.privacy;
-  // });
-  const visibleImages = privacyMode
-  ? []            // 🔒 locked → show NOTHING
-  : images;       // 🔓 unlocked → show ALL images
+  const visibleImages = privacyMode ? [] : images;
 
-
-  // Show empty state if no images
   if (visibleImages.length === 0) {
     emptyState.style.display = "block";
     gallery.appendChild(emptyState);
@@ -235,47 +301,37 @@ async function loadGallery() {
 
     div.innerHTML = `
       ${img.privacy ? '<div class="privacy-badge"><i class="fas fa-lock"></i> Private</div>' : ''}
-      <button class="delete-x ${privacyMode ? 'disabled' : ''}" data-id="${img.id}" title="${privacyMode ? 'Delete disabled in Privacy Mode' : 'Delete image'}">&times;</button>
+      <button class="delete-x" data-id="${img.id}" title="Delete image">&times;</button>
       <img src="${img.dataURL}" alt="${img.name}">
       <button class="select-image-btn" data-id="${img.id}">
         <i class="fas fa-paper-plane"></i> Select
       </button>
     `;
 
-    // Delete image - disabled in privacy mode
+    // Delete image
     const deleteBtn = div.querySelector(".delete-x");
-    if (!privacyMode) {
-      deleteBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        
-        if (img.privacy) {
-          const record = await db.settings.get("privacyPassword");
-          const entered = prompt("Enter privacy password to delete this image:");
-          if (entered !== record?.value) {
-            showNotification("Wrong password. Deletion cancelled.", "error");
-            return;
-          }
+    deleteBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      
+      if (img.privacy) {
+        const record = await db.settings.get("privacyPassword");
+        const entered = prompt("Enter privacy password to delete this image:");
+        if (entered !== record?.value) {
+          showNotification("Wrong password. Deletion cancelled.", "error");
+          return;
         }
+      }
 
-        if (confirm("Are you sure you want to delete this image?")) {
-          await db.images.delete(img.id);
-          await loadGallery();
-          showNotification("Image deleted successfully.", "success");
-        }
-      });
-    } else {
-      // In privacy mode, prevent any clicks on delete button
-      deleteBtn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        showNotification("Delete disabled in Privacy Mode", "warning");
-      };
-    }
+      if (confirm("Are you sure you want to delete this image?")) {
+        await db.images.delete(img.id);
+        await loadGallery();
+        showNotification("Image deleted successfully.", "success");
+      }
+    });
 
-    // Select image - prevent multiple clicks
+    // Select image
     const selectBtn = div.querySelector(".select-image-btn");
     selectBtn.addEventListener("click", async () => {
-      // Prevent multiple rapid clicks
       if (selectBtn.disabled) return;
       
       selectBtn.disabled = true;
@@ -283,17 +339,12 @@ async function loadGallery() {
       
       try {
         const selected = await db.images.get(img.id);
-        // if (img.privacy && !privacyMode) {
-        //   showNotification("Enable Privacy Mode to access this image", "warning");
-        //   return;
-        // }
         if (privacyMode) {
           showNotification("Unlock Privacy Mode to use images", "warning");
           return;
         }
         await sendImageToTab(selected);
       } finally {
-        // Re-enable button after a delay
         setTimeout(() => {
           selectBtn.disabled = false;
           selectBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Select';
@@ -307,7 +358,6 @@ async function loadGallery() {
 
 // Send image to current tab
 async function sendImageToTab(imageData) {
-  // Prevent multiple sends
   if (isSendingImage) {
     showNotification("Please wait, sending previous image...", "warning");
     return;
@@ -323,25 +373,22 @@ async function sendImageToTab(imageData) {
       return;
     }
 
-    // Check if we can access the tab (some pages like chrome:// are restricted)
     if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || 
         tab.url.startsWith('about:')) {
       showNotification("Cannot inject images on this type of page. Please navigate to a regular website.", "error");
       return;
     }
 
-    // Try to send message directly first (content script might already be injected)
     try {
       const response = await chrome.tabs.sendMessage(tab.id, {
         action: "inject-image",
         dataURL: imageData.dataURL,
         fileName: imageData.name,
-        timestamp: Date.now() // Unique identifier
+        timestamp: Date.now()
       });
       
       showNotification(`"${imageData.name}" sent to page successfully!`, "success");
     } catch (sendError) {
-      // If message fails, try to inject the content script first
       console.log("Content script not ready, attempting to inject...");
       
       try {
@@ -350,10 +397,8 @@ async function sendImageToTab(imageData) {
           files: ["content-script.js"]
         });
         
-        // Wait a bit for the content script to initialize
         await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Try sending message again
         await chrome.tabs.sendMessage(tab.id, {
           action: "inject-image",
           dataURL: imageData.dataURL,
@@ -365,7 +410,6 @@ async function sendImageToTab(imageData) {
       } catch (injectError) {
         console.error("Injection error:", injectError);
         
-        // Provide more helpful error messages
         if (injectError.message.includes("Cannot access contents")) {
           showNotification("Cannot access this webpage. Try a different website.", "error");
         } else if (injectError.message.includes("Missing host permission")) {
@@ -383,42 +427,13 @@ async function sendImageToTab(imageData) {
   }
 }
 
-// Privacy toggle - now acts as activation lock
-// privacyToggle.addEventListener("change", async () => {
-//   if (privacyToggle.checked) {
-//     // Privacy mode toggle is ON - need password to activate
-//     // Check if password exists
-//     const record = await db.settings.get("privacyPassword");
-//     if (!record) {
-//       showNotification("Please set a password first", "warning");
-//       privacyToggle.checked = false;
-//       setPasswordContainer.style.display = "block";
-//       passwordContainer.style.display = "none";
-//       return;
-//     }
-
-//     // Show password input to unlock privacy mode
-//     passwordContainer.style.display = "block";
-//     setPasswordContainer.style.display = "none";
-//   } else {
-//     // Turn off privacy mode - no password required to deactivate
-//     privacyMode = false;
-//     privacyLocked = false;
-//     passwordContainer.style.display = "none";
-//     setPasswordContainer.style.display = "none";
-//     loadGallery(); // reload normal images
-//     updateUIForPrivacyMode();
-//     showNotification("Privacy mode disabled", "info");
-//   }
-// });
-
 privacyToggle.addEventListener("change", async () => {
   if (privacyToggle.checked) {
     // User wants to LOCK Privacy Mode
     const record = await db.settings.get("privacyPassword");
     if (!record) {
       showNotification("Please set a password first", "warning");
-      privacyToggle.checked = false; // reset toggle
+      privacyToggle.checked = false;
       setPasswordContainer.style.display = "block";
       return;
     }
@@ -427,6 +442,11 @@ privacyToggle.addEventListener("change", async () => {
     privacyLocked = true;
     passwordContainer.style.display = "none";
     setPasswordContainer.style.display = "none";
+    
+    if (unlockTimer) {
+      clearInterval(unlockTimer);
+    }
+    
     loadGallery();
     updateUIForPrivacyMode();
     showNotification("Privacy Mode enabled", "success");
@@ -443,29 +463,6 @@ privacyToggle.addEventListener("change", async () => {
   }
 });
 
-// privacySubmit.addEventListener("click", async () => {
-//   const entered = privacyPasswordInput.value.trim();
-//   const record = await db.settings.get("privacyPassword");
-
-//   if (!record) {
-//     showNotification("No password set!", "error");
-//     return;
-//   }
-
-//   if (entered === record.value) {
-//     privacyMode = false; // unlocked
-//     privacyLocked = false;
-//     passwordContainer.style.display = "none";
-//     privacyToggle.checked = false; // reflect unlocked state
-//     privacyPasswordInput.value = "";
-//     loadGallery();
-//     updateUIForPrivacyMode();
-//     showNotification("Privacy Mode unlocked", "success");
-//   } else {
-//     showNotification("Incorrect password", "error");
-//   }
-// });
-
 privacySubmit.addEventListener("click", async () => {
   const entered = privacyPasswordInput.value.trim();
   const record = await db.settings.get("privacyPassword");
@@ -476,21 +473,23 @@ privacySubmit.addEventListener("click", async () => {
   }
 
   if (entered === record.value) {
-    privacyMode = false; // unlocked
+    privacyMode = false;
     privacyLocked = false;
     passwordContainer.style.display = "none";
-    privacyToggle.checked = false; // reflect unlocked state
+    privacyToggle.checked = false;
     privacyPasswordInput.value = "";
 
-    // 🔹 Save unlock timestamp
+    // Save unlock timestamp
     const unlockTime = new Date().toISOString();
     await db.settings.put({ key: "privacyUnlockTime", value: unlockTime });
 
+    startUnlockTimer();
     loadGallery();
     updateUIForPrivacyMode();
-    showNotification("Privacy Mode unlocked for 1 day", "success");
+    showNotification("Privacy Mode unlocked for 1 minute", "success");
   } else {
     showNotification("Incorrect password", "error");
+    privacyPasswordInput.value = "";
   }
 });
 
@@ -500,27 +499,28 @@ async function checkPrivacyExpiration() {
   if (unlockRecord) {
     const unlockTime = new Date(unlockRecord.value);
     const now = new Date();
-    const diffMs = now - unlockTime; // milliseconds
-    // const diffDays = diffMs / (1000 * 60 * 60 * 24); // convert to days
-    const diffDays = diffMs / (1000 * 60); 
+    const diffMs = now - unlockTime;
+    const diffMinutes = diffMs / (1000 * 60);
 
-    if (diffDays >= 1) {
-      // 1 day passed → auto-lock
-      privacyMode = true;
-      privacyLocked = true;
-      privacyToggle.checked = true;
-      await db.settings.delete("privacyUnlockTime"); // clear timestamp
-      loadGallery();
-      updateUIForPrivacyMode();
-      showNotification("Privacy Mode re-enabled (1 day expired)", "info");
+    if (diffMinutes >= AUTO_LOCK_MINUTES) {
+      // Auto-lock after 1 minute
+      await lockPrivacyMode();
     } else {
-      // still valid → remain unlocked
+      // Still valid
       privacyMode = false;
       privacyLocked = false;
       privacyToggle.checked = false;
+      
+      // Calculate remaining time
+      const remainingMs = (AUTO_LOCK_MINUTES * 60 * 1000) - diffMs;
+      timeLeft = Math.floor(remainingMs / 1000);
+      
+      if (timeLeft > 0) {
+        startUnlockTimer();
+      }
     }
   } else {
-    // No unlock record → remain locked
+    // No unlock record → locked
     privacyMode = true;
     privacyLocked = true;
     privacyToggle.checked = true;
@@ -532,13 +532,15 @@ async function lockPrivacyMode() {
   privacyLocked = true;
   privacyToggle.checked = true;
 
-  // Remove unlock timestamp
   await db.settings.delete("privacyUnlockTime");
+  
+  if (unlockTimer) {
+    clearInterval(unlockTimer);
+  }
 
-  // Reload gallery and update UI
   loadGallery();
   updateUIForPrivacyMode();
-  showNotification("Privacy Mode re-enabled (expired)", "info");
+  showNotification("Privacy Mode auto-enabled (1 minute expired)", "info");
 }
 
 // Forgot password
@@ -546,21 +548,23 @@ forgotPassword.addEventListener("click", async () => {
   const confirmReset = confirm("Resetting password will delete all private images. Continue?");
   if (!confirmReset) return;
   
-  // Delete all private images
   const privateImages = await db.images.where("privacy").equals(1).toArray();
   for (const img of privateImages) {
     await db.images.delete(img.id);
   }
   
-  // Remove password
   await db.settings.delete("privacyPassword");
+  await db.settings.delete("privacyUnlockTime");
   
-  // Reset UI
   privacyMode = false;
   privacyLocked = false;
   privacyToggle.checked = false;
   passwordContainer.style.display = "none";
   setPasswordContainer.style.display = "block";
+  
+  if (unlockTimer) {
+    clearInterval(unlockTimer);
+  }
   
   await loadGallery();
   updateUIForPrivacyMode();
@@ -571,6 +575,7 @@ forgotPassword.addEventListener("click", async () => {
 setPasswordLink.addEventListener("click", () => {
   setPasswordContainer.style.display = "block";
   passwordContainer.style.display = "none";
+  privacyPasswordInput.value = "";
 });
 
 // Cancel set password
@@ -578,7 +583,6 @@ cancelSetPassword.addEventListener("click", () => {
   setPasswordContainer.style.display = "none";
   newPasswordInput.value = "";
   
-  // If privacy toggle was checked, uncheck it
   if (privacyToggle.checked) {
     privacyToggle.checked = false;
   }
@@ -621,7 +625,6 @@ clearAllBtn.addEventListener("click", async () => {
   
   const images = await db.images.toArray();
   
-  // Check if there are private images that need password
   const hasPrivateImages = images.some(img => img.privacy);
   
   if (hasPrivateImages) {
@@ -639,35 +642,10 @@ clearAllBtn.addEventListener("click", async () => {
   showNotification("All images deleted successfully.", "success");
 });
 
-// Keyboard shortcuts
-document.addEventListener('keydown', (e) => {
-  // Escape key to close password modals
-  if (e.key === 'Escape') {
-    if (passwordContainer.style.display === 'block') {
-      privacyToggle.checked = false;
-      privacyMode = false;
-      privacyLocked = false;
-      passwordContainer.style.display = 'none';
-      loadGallery();
-      updateUIForPrivacyMode();
-    }
-    
-    if (setPasswordContainer.style.display === 'block') {
-      setPasswordContainer.style.display = 'none';
-      newPasswordInput.value = "";
-      
-      if (privacyToggle.checked) {
-        privacyToggle.checked = false;
-      }
-    }
+// Auto-save unlock time periodically
+setInterval(async () => {
+  if (!privacyMode) {
+    const unlockTime = new Date().toISOString();
+    await db.settings.put({ key: "privacyUnlockTime", value: unlockTime });
   }
-  
-  // Enter key in password inputs
-  if (e.key === 'Enter') {
-    if (document.activeElement === privacyPasswordInput) {
-      privacySubmit.click();
-    } else if (document.activeElement === newPasswordInput) {
-      setPasswordBtn.click();
-    }
-  }
-});
+}, 30000); // Save every 30 seconds
