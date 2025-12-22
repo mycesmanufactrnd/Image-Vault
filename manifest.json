@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Image Vault",
+  "version": "1.2",
+  "description": "Store images and quickly insert them into webpage file inputs.",
+  "permissions": ["scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "128": "ImageSaver.png"
+  }
+}
