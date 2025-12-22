@@ -5,7 +5,7 @@ db.version(2).stores({
 });
 
 const MAX_IMAGES = 6;
-const AUTO_LOCK_MINUTES = 1; // Changed to 1 minute for testing
+const AUTO_LOCK_MINUTES = 24 * 60; // 24 hours = 1440 minutes
 
 // Elements
 const uploadButton = document.getElementById("uploadButton");
@@ -107,9 +107,17 @@ function showNotification(message, type = "info") {
 
 // Format time
 function formatTime(seconds) {
-  const mins = Math.floor(seconds / 60);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${secs.toString().padStart(2, '0')}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${secs.toString().padStart(2, '0')}s`;
+  } else {
+    return `${secs}s`;
+  }
 }
 
 // Start unlock timer
@@ -486,7 +494,7 @@ privacySubmit.addEventListener("click", async () => {
     startUnlockTimer();
     loadGallery();
     updateUIForPrivacyMode();
-    showNotification("Privacy Mode unlocked for 1 minute", "success");
+    showNotification("Privacy Mode unlocked for 1 day", "success");
   } else {
     showNotification("Incorrect password", "error");
     privacyPasswordInput.value = "";
@@ -503,7 +511,7 @@ async function checkPrivacyExpiration() {
     const diffMinutes = diffMs / (1000 * 60);
 
     if (diffMinutes >= AUTO_LOCK_MINUTES) {
-      // Auto-lock after 1 minute
+      // Auto-lock after 24 hours
       await lockPrivacyMode();
     } else {
       // Still valid
@@ -540,7 +548,7 @@ async function lockPrivacyMode() {
 
   loadGallery();
   updateUIForPrivacyMode();
-  showNotification("Privacy Mode auto-enabled (1 minute expired)", "info");
+  showNotification("Privacy Mode auto-enabled (24 hours expired)", "info");
 }
 
 // Forgot password
