@@ -707,3 +707,84 @@ input:checked + .toggle-slider:before {
 #fileInput {
   display: none;
 }
+
+.item.selected {
+  outline: 3px solid #4a6ee0; /* highlight border */
+  box-shadow: 0 0 10px rgba(74, 110, 224, 0.5);
+  transform: scale(1.05);
+  transition: all 0.2s ease;
+}
+
+/* Optional: maintain hover effect if you already have it */
+.item:hover {
+  outline: 3px solid #4a6ee0;
+  box-shadow: 0 0 10px rgba(74, 110, 224, 0.5);
+  transform: scale(1.05);
+  transition: all 0.2s ease;
+}
+
+/* Container for sorting controls */
+.sort-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem; /* spacing between elements */
+  margin-right: 1rem;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Sort label */
+.sort-container label {
+  font-weight: 500;
+  color: #ffffff;
+}
+
+/* Dropdown select */
+#sortCriteria {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #b9b9b9;
+    background-color: #f0f0f0;
+    font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#sortCriteria:hover,
+#sortCriteria:focus {
+  border-color: #007bff;
+  outline: none;
+}
+
+/* Sort order button */
+#sortOrderBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background-color: #f0f0f0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+#sortOrderBtn i {
+  font-size: 1rem;
+  transition: transform 0.2s ease;
+}
+
+#sortOrderBtn:hover {
+  background-color: #e0e0e0;
+}
+
+/* Active state for the button (optional visual feedback) */
+#sortOrderBtn.active {
+  background-color: #007bff;
+  color: #fff;
+}
+
+#sortOrderBtn span#sortOrderLabel {
+  font-weight: 600;
+}

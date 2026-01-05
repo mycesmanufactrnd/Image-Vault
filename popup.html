@@ -37,26 +37,43 @@
     </div>
   </div>
 
-  <div class="gallery-section">
-    <div class="section-header">
-      <h2><i class="fas fa-th-large"></i> Gallery</h2>
-      <div class="privacy-toggle-container">
-        <span class="privacy-label">Privacy Mode</span>
-        <label class="toggle-switch">
-          <input type="checkbox" id="privacyToggle">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
+<div class="gallery-section">
+  <div class="section-header">
+    <h2><i class="fas fa-th-large"></i> Gallery</h2>
+
+    <!-- SORT CONTROLS -->
+    <div class="sort-container">
+      <label for="sortCriteria">Sort by:</label>
+      <select id="sortCriteria">
+        <option value="date">Date</option>
+        <option value="size">Size</option>
+        <!-- <option value="type">Type</option> -->
+      </select>
+
+      <button id="sortOrderBtn" title="Toggle ascending/descending">
+        <i class="fas fa-sort-amount-down"></i>
+        <span id="sortOrderLabel">Asc</span>
+      </button>
     </div>
 
-    <div class="gallery" id="gallery">
-      <div class="empty-state" id="emptyState">
-        <i class="fas fa-images"></i>
-        <h3>No images yet</h3>
-        <p>Upload images using the upload button above</p>
-      </div>
+    <!-- PRIVACY TOGGLE -->
+    <div class="privacy-toggle-container">
+      <span class="privacy-label">Privacy Mode</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="privacyToggle">
+        <span class="toggle-slider"></span>
+      </label>
     </div>
   </div>
+
+  <div class="gallery" id="gallery">
+    <div class="empty-state" id="emptyState">
+      <i class="fas fa-images"></i>
+      <h3>No images yet</h3>
+      <p>Upload images using the upload button above</p>
+    </div>
+  </div>
+</div>
 
   <div class="password-section">
     <div class="password-entry" id="passwordContainer">

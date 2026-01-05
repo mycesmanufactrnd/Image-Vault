@@ -36,11 +36,18 @@ const clearAllBtn = document.getElementById("clearAllBtn");
 const notification = document.getElementById("notification");
 const notificationText = document.getElementById("notificationText");
 
+const sortOrderBtn = document.getElementById("sortOrderBtn");
+const sortOrderLabel = document.getElementById("sortOrderLabel");
+const sortCriteriaSelect = document.getElementById("sortCriteria");
+
 let privacyMode = true;
 let privacyLocked = false;
 let isSendingImage = false;
 let unlockTimer = null;
-let timeLeft = AUTO_LOCK_MINUTES * 60; // seconds
+let timeLeft = AUTO_LOCK_MINUTES * 60;
+let sellectedImageId = null;
+let sortCriteria = "date"; // default
+let sortAscending = true;   // default ascending
 
 // Prevent right-click context menu
 document.addEventListener('contextmenu', (e) => {
@@ -292,20 +299,49 @@ async function loadGallery() {
 
   const visibleImages = privacyMode ? [] : images;
 
-  if (visibleImages.length === 0) {
+  if (!visibleImages.length) {
     emptyState.style.display = "block";
     gallery.appendChild(emptyState);
+    selectedImageId = null; // no selection
+    return;
   } else {
     emptyState.style.display = "none";
   }
 
-  visibleImages.forEach(img => {
+  // --- SORT IMAGES ---
+  const sortedImages = [...visibleImages].sort((a, b) => {
+    let valA, valB;
+
+    switch (sortCriteria) {
+      case "date":
+        valA = new Date(a.uploaded).getTime();
+        valB = new Date(b.uploaded).getTime();
+        break;
+      case "size":
+        valA = a.dataURL.length;
+        valB = b.dataURL.length;
+        break;
+      // case "type":
+      //   valA = a.type.toLowerCase();
+      //   valB = b.type.toLowerCase();
+      //   break;
+      default:
+        valA = new Date(a.uploaded).getTime();
+        valB = new Date(b.uploaded).getTime();
+    }
+
+    if (valA < valB) return sortAscending ? -1 : 1;
+    if (valA > valB) return sortAscending ? 1 : -1;
+    return 0;
+  });
+  // --- END SORT ---
+
+  sortedImages.forEach((img, index) => {
     const div = document.createElement("div");
     div.className = "item";
-    
-    if (img.privacy) {
-      div.classList.add("privacy-item");
-    }
+    div.dataset.id = img.id;
+
+    if (img.privacy) div.classList.add("privacy-item");
 
     div.innerHTML = `
       ${img.privacy ? '<div class="privacy-badge"><i class="fas fa-lock"></i> Private</div>' : ''}
@@ -316,11 +352,18 @@ async function loadGallery() {
       </button>
     `;
 
-    // Delete image
+    // Click to select
+    div.addEventListener("click", () => {
+      const prev = gallery.querySelector(".item.selected");
+      if (prev) prev.classList.remove("selected");
+      div.classList.add("selected");
+      selectedImageId = img.id;
+    });
+
+    // Delete button
     const deleteBtn = div.querySelector(".delete-x");
     deleteBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      
       if (img.privacy) {
         const record = await db.settings.get("privacyPassword");
         const entered = prompt("Enter privacy password to delete this image:");
@@ -329,22 +372,20 @@ async function loadGallery() {
           return;
         }
       }
-
       if (confirm("Are you sure you want to delete this image?")) {
         await db.images.delete(img.id);
+        selectedImageId = null;
         await loadGallery();
         showNotification("Image deleted successfully.", "success");
       }
     });
 
-    // Select image
+    // Select button (inject)
     const selectBtn = div.querySelector(".select-image-btn");
     selectBtn.addEventListener("click", async () => {
       if (selectBtn.disabled) return;
-      
       selectBtn.disabled = true;
       selectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
-      
       try {
         const selected = await db.images.get(img.id);
         if (privacyMode) {
@@ -361,7 +402,104 @@ async function loadGallery() {
     });
 
     gallery.appendChild(div);
+
+    // Auto-select first image
+    if (index === 0) {
+      div.classList.add("selected");
+      selectedImageId = img.id;
+    }
   });
+}
+
+sortOrderBtn.addEventListener("click", () => {
+  sortAscending = !sortAscending;
+
+  // Update icon and label
+  const icon = sortOrderBtn.querySelector("i");
+  icon.className = sortAscending 
+    ? "fas fa-sort-amount-down"   // down arrow = ascending
+    : "fas fa-sort-amount-up";    // up arrow = descending
+
+  sortOrderLabel.textContent = sortAscending ? "Asc" : "Desc";
+
+  loadGallery(); // reload gallery with new sort order
+});
+
+sortCriteriaSelect.addEventListener("change", () => {
+  loadGallery(); // reload gallery when criteria changes
+});
+
+// Global keyboard listener
+document.addEventListener("keydown", async (e) => {
+  const items = Array.from(gallery.querySelectorAll(".item"));
+  if (!items.length) return;
+
+  // Find currently selected index
+  let selectedIndex = items.findIndex(div => div.classList.contains("selected"));
+
+  // Arrow Left → previous
+  if (e.key === "ArrowLeft") {
+    if (selectedIndex === -1) selectedIndex = 0;
+    else selectedIndex = (selectedIndex - 1 + items.length) % items.length;
+
+    updateSelection(items, selectedIndex);
+  }
+
+  // Arrow Right → next
+  if (e.key === "ArrowRight") {
+    if (selectedIndex === -1) selectedIndex = 0;
+    else selectedIndex = (selectedIndex + 1) % items.length;
+
+    updateSelection(items, selectedIndex);
+  }
+
+  // Enter → inject
+  if (e.key === "Enter" && selectedIndex !== -1) {
+    const selectedId = items[selectedIndex].dataset.id;
+    const img = await db.images.get(selectedId);
+    if (!img) return;
+
+    if (privacyMode) {
+      showNotification("Unlock Privacy Mode to use images", "warning");
+      return;
+    }
+
+    await sendImageToTab(img);
+  }
+
+  // Delete → delete
+  if (e.key === "Delete" && selectedIndex !== -1) {
+    const selectedId = items[selectedIndex].dataset.id;
+    const img = await db.images.get(selectedId);
+    if (!img) return;
+
+    if (img.privacy) {
+      const record = await db.settings.get("privacyPassword");
+      const entered = prompt("Enter privacy password to delete this image:");
+      if (entered !== record?.value) {
+        showNotification("Wrong password. Deletion cancelled.", "error");
+        return;
+      }
+    }
+
+    if (confirm(`Are you sure you want to delete "${img.name}"?`)) {
+      await db.images.delete(selectedId);
+      await loadGallery();
+      showNotification("Image deleted successfully.", "success");
+    }
+  }
+});
+
+// Helper function to update selection
+function updateSelection(items, newIndex) {
+  items.forEach(div => div.classList.remove("selected"));
+  const newSelected = items[newIndex];
+  if (!newSelected) return;
+  newSelected.classList.add("selected");
+  selectedImageId = newSelected.dataset.id;
+
+  // Scroll into view if needed
+  newSelected.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
 }
 
 // Send image to current tab
@@ -370,66 +508,73 @@ async function sendImageToTab(imageData) {
     showNotification("Please wait, sending previous image...", "warning");
     return;
   }
-  
+
   isSendingImage = true;
-  
+
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
+
     if (!tab) {
-      showNotification("No active tab found. Please open a webpage first.", "error");
-      return;
+      throw new Error("NO_ACTIVE_TAB");
     }
 
-    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || 
-        tab.url.startsWith('about:')) {
-      showNotification("Cannot inject images on this type of page. Please navigate to a regular website.", "error");
-      return;
+    if (
+      tab.url.startsWith("chrome://") ||
+      tab.url.startsWith("chrome-extension://") ||
+      tab.url.startsWith("about:")
+    ) {
+      throw new Error("RESTRICTED_PAGE");
     }
 
     try {
-      const response = await chrome.tabs.sendMessage(tab.id, {
+      await chrome.tabs.sendMessage(tab.id, {
         action: "inject-image",
         dataURL: imageData.dataURL,
         fileName: imageData.name,
         timestamp: Date.now()
       });
-      
+
       showNotification(`"${imageData.name}" sent to page successfully!`, "success");
-    } catch (sendError) {
-      console.log("Content script not ready, attempting to inject...");
-      
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          files: ["content-script.js"]
-        });
-        
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        await chrome.tabs.sendMessage(tab.id, {
-          action: "inject-image",
-          dataURL: imageData.dataURL,
-          fileName: imageData.name,
-          timestamp: Date.now()
-        });
-        
-        showNotification(`"${imageData.name}" sent to page successfully!`, "success");
-      } catch (injectError) {
-        console.error("Injection error:", injectError);
-        
-        if (injectError.message.includes("Cannot access contents")) {
-          showNotification("Cannot access this webpage. Try a different website.", "error");
-        } else if (injectError.message.includes("Missing host permission")) {
-          showNotification("Extension permissions issue. Please reload the extension.", "error");
-        } else {
-          showNotification(`Cannot inject image. Make sure you're on a supported webpage with file inputs.`, "error");
-        }
+
+    } catch {
+      if (!chrome?.scripting?.executeScript) {
+        throw new Error("SCRIPTING_API_UNAVAILABLE");
       }
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content-script.js"]
+      });
+
+      await new Promise(r => setTimeout(r, 150));
+
+      await chrome.tabs.sendMessage(tab.id, {
+        action: "inject-image",
+        dataURL: imageData.dataURL,
+        fileName: imageData.name,
+        timestamp: Date.now()
+      });
+
+      showNotification(`"${imageData.name}" sent to page successfully!`, "success");
     }
+
   } catch (error) {
     console.error("Send image error:", error);
-    showNotification("Error: " + error.message, "error");
+
+    switch (error.message) {
+      case "NO_ACTIVE_TAB":
+        showNotification("No active tab found.", "error");
+        break;
+      case "RESTRICTED_PAGE":
+        showNotification("This page does not allow image injection.", "error");
+        break;
+      case "SCRIPTING_API_UNAVAILABLE":
+        showNotification("Image injection is unavailable on this page.", "error");
+        break;
+      default:
+        showNotification("Unable to inject image on this webpage.", "error");
+    }
+
   } finally {
     isSendingImage = false;
   }
