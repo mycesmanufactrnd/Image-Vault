@@ -22,7 +22,7 @@
       <h2><i class="fas fa-cloud-upload-alt"></i> Upload Images</h2>
       <div class="upload-actions">
         <button id="uploadButton" class="upload-btn">
-          <i class="fas fa-plus"></i> Add Image
+          <i class="fas fa-plus"></i> Image
         </button>
         <input type="file" id="fileInput" accept="image/png, image/jpeg, image/jpg, image/webp" multiple>
       </div>
@@ -37,48 +37,48 @@
     </div>
   </div>
 
-<div class="gallery-section">
-  <div class="section-header">
-    <h2><i class="fas fa-th-large"></i> Gallery</h2>
+  <div class="gallery-section">
+    <div class="section-header">
+      <h2><i class="fas fa-th-large"></i> Gallery</h2>
 
-    <!-- SORT CONTROLS -->
-    <div class="sort-container">
-      <label for="sortCriteria">Sort by:</label>
-      <select id="sortCriteria">
-        <option value="date">Date</option>
-        <option value="size">Size</option>
-        <!-- <option value="type">Type</option> -->
-      </select>
+      <!-- SORT CONTROLS -->
+      <div class="sort-container">
+        <label for="sortCriteria">Sort by:</label>
+        <select id="sortCriteria">
+          <option value="date">Date</option>
+          <option value="size">Size</option>
+        </select>
 
-      <button id="sortOrderBtn" title="Toggle ascending/descending">
-        <i class="fas fa-sort-amount-down"></i>
-        <span id="sortOrderLabel">Asc</span>
-      </button>
+        <button id="sortOrderBtn" title="Toggle ascending/descending">
+          <i class="fas fa-sort-amount-down"></i>
+          <span id="sortOrderLabel">Asc</span>
+        </button>
+      </div>
+
+      <!-- PRIVACY TOGGLE -->
+      <div class="privacy-toggle-container">
+        <span class="privacy-label">Privacy Mode</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="privacyToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
     </div>
 
-    <!-- PRIVACY TOGGLE -->
-    <div class="privacy-toggle-container">
-      <span class="privacy-label">Privacy Mode</span>
-      <label class="toggle-switch">
-        <input type="checkbox" id="privacyToggle">
-        <span class="toggle-slider"></span>
-      </label>
+    <div class="gallery" id="gallery">
+      <div class="empty-state" id="emptyState">
+        <i class="fas fa-images"></i>
+        <h3>No images yet</h3>
+        <p>Upload images using the upload button above</p>
+      </div>
     </div>
   </div>
 
-  <div class="gallery" id="gallery">
-    <div class="empty-state" id="emptyState">
-      <i class="fas fa-images"></i>
-      <h3>No images yet</h3>
-      <p>Upload images using the upload button above</p>
-    </div>
-  </div>
-</div>
-
+  <!-- SINGLE PASSWORD CONTAINER (used for both unlock and set password) -->
   <div class="password-section">
     <div class="password-entry" id="passwordContainer">
       <h3><i class="fas fa-lock"></i> Privacy Mode Locked</h3>
-      <p>Enter password to unlock images</p>
+      <p>Enter password to unlock Privacy Mode</p>
       <div class="password-input-group">
         <input type="password" id="privacyPassword" placeholder="Enter password">
         <button id="privacySubmit" class="btn-primary">
@@ -87,18 +87,7 @@
       </div>
       <div class="password-actions">
         <button class="btn-link" id="forgotPassword">Forgot Password?</button>
-        <button class="btn-link" id="setPasswordLink">Set New Password</button>
       </div>
-    </div>
-
-    <div class="password-entry" id="setPasswordContainer">
-      <h3><i class="fas fa-key"></i> Set Privacy Password</h3>
-      <p>Create a password to lock privacy mode</p>
-      <div class="password-input-group">
-        <input type="password" id="newPassword" placeholder="Create a new password (min 4 chars)">
-        <button id="setPasswordBtn" class="btn-primary">Set Password</button>
-      </div>
-      <button class="btn-secondary" id="cancelSetPassword">Cancel</button>
     </div>
   </div>
 
@@ -110,7 +99,7 @@
     <button id="clearAllBtn" class="btn-danger">
       <i class="fas fa-trash-alt"></i> Clear All Images
     </button>
-    <p class="help-text"><small>Image Vault v2.3 • Auto-locks after 24 hours</small></p>
+    <p class="help-text"><small>Image Vault v2.3 • Auto-switches to Privacy Mode after 1 hour</small></p>
   </div>
 
   <div class="notification" id="notification">

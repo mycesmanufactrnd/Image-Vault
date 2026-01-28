@@ -788,3 +788,20 @@ input:checked + .toggle-slider:before {
 #sortOrderBtn span#sortOrderLabel {
   font-weight: 600;
 }
+
+/* Image File Name */
+.image-name {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ddd;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.item.selected .image-name {
+  color: #fff;
+  font-weight: 500;
+}

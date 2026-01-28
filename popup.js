@@ -5,7 +5,7 @@ db.version(2).stores({
 });
 
 const MAX_IMAGES = 6;
-const AUTO_LOCK_MINUTES = 24 * 60; // 24 hours = 1440 minutes
+const AUTO_LOCK_MINUTES = 60; // 1 hour
 
 // Elements
 const uploadButton = document.getElementById("uploadButton");
@@ -25,12 +25,6 @@ const passwordContainer = document.getElementById("passwordContainer");
 const privacyPasswordInput = document.getElementById("privacyPassword");
 const privacySubmit = document.getElementById("privacySubmit");
 const forgotPassword = document.getElementById("forgotPassword");
-const setPasswordLink = document.getElementById("setPasswordLink");
-
-const setPasswordContainer = document.getElementById("setPasswordContainer");
-const newPasswordInput = document.getElementById("newPassword");
-const setPasswordBtn = document.getElementById("setPasswordBtn");
-const cancelSetPassword = document.getElementById("cancelSetPassword");
 
 const clearAllBtn = document.getElementById("clearAllBtn");
 const notification = document.getElementById("notification");
@@ -40,14 +34,16 @@ const sortOrderBtn = document.getElementById("sortOrderBtn");
 const sortOrderLabel = document.getElementById("sortOrderLabel");
 const sortCriteriaSelect = document.getElementById("sortCriteria");
 
-let privacyMode = true;
+let privacyMode = false; // Start in default mode
 let privacyLocked = false;
 let isSendingImage = false;
 let unlockTimer = null;
 let timeLeft = AUTO_LOCK_MINUTES * 60;
-let sellectedImageId = null;
-let sortCriteria = "date"; // default
-let sortAscending = true;   // default ascending
+let selectedImageId = null;
+let sortCriteria = "date";
+let sortAscending = true;
+
+privacyToggle.checked = privacyMode;
 
 // Prevent right-click context menu
 document.addEventListener('contextmenu', (e) => {
@@ -58,7 +54,6 @@ document.addEventListener('contextmenu', (e) => {
 
 // Prevent keyboard shortcuts for dev tools
 document.addEventListener('keydown', (e) => {
-  // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U
   if (
     e.key === 'F12' ||
     (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
@@ -69,33 +64,18 @@ document.addEventListener('keydown', (e) => {
     return false;
   }
   
-  // Escape key to close password modals
+  // Escape key to close password modal
   if (e.key === 'Escape') {
     if (passwordContainer.style.display === 'block') {
-      privacyToggle.checked = false;
-      privacyMode = false;
-      privacyLocked = false;
       passwordContainer.style.display = 'none';
-      loadGallery();
-      updateUIForPrivacyMode();
-    }
-    
-    if (setPasswordContainer.style.display === 'block') {
-      setPasswordContainer.style.display = 'none';
-      newPasswordInput.value = "";
-      
-      if (privacyToggle.checked) {
-        privacyToggle.checked = false;
-      }
+      privacyPasswordInput.value = "";
     }
   }
   
-  // Enter key in password inputs
+  // Enter key in password input
   if (e.key === 'Enter') {
     if (document.activeElement === privacyPasswordInput) {
       privacySubmit.click();
-    } else if (document.activeElement === newPasswordInput) {
-      setPasswordBtn.click();
     }
   }
 });
@@ -127,7 +107,7 @@ function formatTime(seconds) {
   }
 }
 
-// Start unlock timer
+// Start unlock timer (for default mode countdown)
 function startUnlockTimer() {
   if (unlockTimer) {
     clearInterval(unlockTimer);
@@ -142,7 +122,7 @@ function startUnlockTimer() {
     
     if (timeLeft <= 0) {
       clearInterval(unlockTimer);
-      lockPrivacyMode();
+      switchToPrivacyMode();
     }
   }, 1000);
 }
@@ -152,28 +132,78 @@ function updateTimerDisplay() {
   if (privacyMode) {
     privacyTimer.textContent = "Locked";
   } else {
-    privacyTimer.textContent = `Auto-lock in ${formatTime(timeLeft)}`;
+    privacyTimer.textContent = `Auto-lock to Privacy Mode in ${formatTime(timeLeft)}`;
+  }
+}
+
+// Show password modal
+function showPasswordModal(mode = "unlock") {
+  passwordContainer.style.display = "block";
+  if (mode === "set") {
+    passwordContainer.querySelector("h3").innerHTML = '<i class="fas fa-key"></i> Set Privacy Password';
+    passwordContainer.querySelector("p").textContent = "Create a 4-digit password for Privacy Mode";
+    privacySubmit.innerHTML = '<i class="fas fa-check"></i> Set Password';
+  } else {
+    passwordContainer.querySelector("h3").innerHTML = '<i class="fas fa-lock"></i> Privacy Mode Locked';
+    passwordContainer.querySelector("p").textContent = "Enter password to unlock Privacy Mode";
+    privacySubmit.innerHTML = '<i class="fas fa-unlock"></i> Unlock';
   }
 }
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
   maxImages.textContent = MAX_IMAGES;
-  await checkPassword();
-  await checkPrivacyExpiration();
+  
+  // Check if password exists
+  const hasPassword = await checkPassword();
+  
+  // Check privacy mode state
+  const unlockRecord = await db.settings.get("privacyUnlockTime");
+  if (unlockRecord) {
+    const unlockTime = new Date(unlockRecord.value);
+    const now = new Date();
+    const diffMs = now - unlockTime;
+    const diffMinutes = diffMs / (1000 * 60);
+
+    if (diffMinutes >= AUTO_LOCK_MINUTES) {
+      // Auto-switch to privacy mode after 1 hour
+      await switchToPrivacyMode();
+    } else {
+      // Still in default mode, start countdown
+      privacyMode = false;
+      privacyLocked = false;
+      privacyToggle.checked = false;
+      
+      // Calculate remaining time
+      const remainingMs = (AUTO_LOCK_MINUTES * 60 * 1000) - diffMs;
+      timeLeft = Math.floor(remainingMs / 1000);
+      
+      if (timeLeft > 0) {
+        startUnlockTimer();
+      }
+    }
+  } else {
+    // First time or no unlock record - start in default mode
+    privacyMode = false;
+    privacyLocked = false;
+    privacyToggle.checked = false;
+    
+    if (hasPassword) {
+      // If password exists, start countdown
+      const unlockTime = new Date().toISOString();
+      await db.settings.put({ key: "privacyUnlockTime", value: unlockTime });
+      startUnlockTimer();
+    }
+  }
+  
   await loadGallery();
   updateUIForPrivacyMode();
-  
-  // Start timer if unlocked
-  if (!privacyMode) {
-    startUnlockTimer();
-  }
 });
 
 // Events
 uploadButton.addEventListener("click", () => {
   if (privacyMode) {
-    showNotification("Unlock Privacy Mode to upload images", "error");
+    showNotification("Switch to Default Mode to upload images", "error");
     return;
   }
   fileInput.click();
@@ -184,21 +214,29 @@ fileInput.addEventListener("change", handleFileUpload);
 // Update UI based on privacy mode
 function updateUIForPrivacyMode() {
   const privacyStatusSpan = privacyStatus.querySelector("span");
-  uploadButton.classList.toggle("disabled", privacyMode);
+  uploadButton.disabled = privacyMode;
+  
+  // Update footer text
+  document.querySelector(".help-text small").textContent = 
+    `Image Vault v2.3 • Auto-switches to Privacy Mode after 1 hour`;
 
   if (privacyMode) {
     // Privacy mode is active
     privacyStatusSpan.textContent = "Active";
     privacyStatus.classList.add("active");
-    uploadMessage.textContent = "Privacy Mode locked. Unlock to access images.";
+    uploadMessage.textContent = "Privacy Mode: Images are protected";
     uploadMessage.style.color = "#f87171";
     privacyTimer.textContent = "Locked";
+    privacyToggle.checked = true;
+    passwordContainer.style.display = "none";
   } else {
-    // Privacy mode is inactive
+    // Default mode is active
     privacyStatusSpan.textContent = "Inactive";
     privacyStatus.classList.remove("active");
-    uploadMessage.textContent = "Images unlocked. You may select and inject.";
+    uploadMessage.textContent = "Default Mode: Upload and manage images";
     uploadMessage.style.color = "#94a3b8";
+    privacyToggle.checked = false;
+    passwordContainer.style.display = "none";
   }
 }
 
@@ -211,7 +249,6 @@ async function updateStorageIndicator() {
   storageFill.style.width = `${percentage}%`;
   storageText.textContent = `${existingImages}/${MAX_IMAGES} images`;
   
-  // Change color based on storage level
   if (percentage >= 90) {
     storageFill.style.background = "linear-gradient(90deg, #ef4444, #f87171)";
   } else if (percentage >= 70) {
@@ -223,7 +260,7 @@ async function updateStorageIndicator() {
 
 async function handleFileUpload(e) {
   if (privacyMode) {
-    showNotification("Cannot upload images in Privacy Mode", "error");
+    showNotification("Switch to Default Mode to upload images", "error");
     fileInput.value = "";
     return;
   }
@@ -270,7 +307,6 @@ async function saveImage(file) {
           name: file.name,
           type: file.type,
           dataURL: ev.target.result,
-          privacy: privacyMode,
           uploaded: new Date().toISOString()
         });
         
@@ -297,19 +333,17 @@ async function loadGallery() {
 
   await updateStorageIndicator();
 
-  const visibleImages = privacyMode ? [] : images;
-
-  if (!visibleImages.length) {
+  if (!images.length) {
     emptyState.style.display = "block";
     gallery.appendChild(emptyState);
-    selectedImageId = null; // no selection
+    selectedImageId = null;
     return;
   } else {
     emptyState.style.display = "none";
   }
 
-  // --- SORT IMAGES ---
-  const sortedImages = [...visibleImages].sort((a, b) => {
+  // Sort images
+  const sortedImages = [...images].sort((a, b) => {
     let valA, valB;
 
     switch (sortCriteria) {
@@ -321,10 +355,6 @@ async function loadGallery() {
         valA = a.dataURL.length;
         valB = b.dataURL.length;
         break;
-      // case "type":
-      //   valA = a.type.toLowerCase();
-      //   valB = b.type.toLowerCase();
-      //   break;
       default:
         valA = new Date(a.uploaded).getTime();
         valB = new Date(b.uploaded).getTime();
@@ -334,21 +364,22 @@ async function loadGallery() {
     if (valA > valB) return sortAscending ? 1 : -1;
     return 0;
   });
-  // --- END SORT ---
 
   sortedImages.forEach((img, index) => {
     const div = document.createElement("div");
     div.className = "item";
     div.dataset.id = img.id;
 
-    if (img.privacy) div.classList.add("privacy-item");
-
     div.innerHTML = `
-      ${img.privacy ? '<div class="privacy-badge"><i class="fas fa-lock"></i> Private</div>' : ''}
       <button class="delete-x" data-id="${img.id}" title="Delete image">&times;</button>
       <img src="${img.dataURL}" alt="${img.name}">
+      
+      <div class="image-name">
+        ${img.name}
+      </div>
+
       <button class="select-image-btn" data-id="${img.id}">
-        <i class="fas fa-paper-plane"></i> Select
+        <i class="fas fa-paper-plane"></i> ${privacyMode ? "Locked" : "Select"}
       </button>
     `;
 
@@ -364,7 +395,8 @@ async function loadGallery() {
     const deleteBtn = div.querySelector(".delete-x");
     deleteBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      if (img.privacy) {
+      
+      if (privacyMode) {
         const record = await db.settings.get("privacyPassword");
         const entered = prompt("Enter privacy password to delete this image:");
         if (entered !== record?.value) {
@@ -372,6 +404,7 @@ async function loadGallery() {
           return;
         }
       }
+      
       if (confirm("Are you sure you want to delete this image?")) {
         await db.images.delete(img.id);
         selectedImageId = null;
@@ -383,15 +416,16 @@ async function loadGallery() {
     // Select button (inject)
     const selectBtn = div.querySelector(".select-image-btn");
     selectBtn.addEventListener("click", async () => {
+      if (privacyMode) {
+        showNotification("Switch to Default Mode to use images", "warning");
+        return;
+      }
+      
       if (selectBtn.disabled) return;
       selectBtn.disabled = true;
       selectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
       try {
         const selected = await db.images.get(img.id);
-        if (privacyMode) {
-          showNotification("Unlock Privacy Mode to use images", "warning");
-          return;
-        }
         await sendImageToTab(selected);
       } finally {
         setTimeout(() => {
@@ -414,19 +448,18 @@ async function loadGallery() {
 sortOrderBtn.addEventListener("click", () => {
   sortAscending = !sortAscending;
 
-  // Update icon and label
   const icon = sortOrderBtn.querySelector("i");
   icon.className = sortAscending 
-    ? "fas fa-sort-amount-down"   // down arrow = ascending
-    : "fas fa-sort-amount-up";    // up arrow = descending
+    ? "fas fa-sort-amount-down"
+    : "fas fa-sort-amount-up";
 
   sortOrderLabel.textContent = sortAscending ? "Asc" : "Desc";
 
-  loadGallery(); // reload gallery with new sort order
+  loadGallery();
 });
 
 sortCriteriaSelect.addEventListener("change", () => {
-  loadGallery(); // reload gallery when criteria changes
+  loadGallery();
 });
 
 // Global keyboard listener
@@ -434,46 +467,39 @@ document.addEventListener("keydown", async (e) => {
   const items = Array.from(gallery.querySelectorAll(".item"));
   if (!items.length) return;
 
-  // Find currently selected index
   let selectedIndex = items.findIndex(div => div.classList.contains("selected"));
 
-  // Arrow Left → previous
   if (e.key === "ArrowLeft") {
     if (selectedIndex === -1) selectedIndex = 0;
     else selectedIndex = (selectedIndex - 1 + items.length) % items.length;
-
     updateSelection(items, selectedIndex);
   }
 
-  // Arrow Right → next
   if (e.key === "ArrowRight") {
     if (selectedIndex === -1) selectedIndex = 0;
     else selectedIndex = (selectedIndex + 1) % items.length;
-
     updateSelection(items, selectedIndex);
   }
 
-  // Enter → inject
   if (e.key === "Enter" && selectedIndex !== -1) {
     const selectedId = items[selectedIndex].dataset.id;
     const img = await db.images.get(selectedId);
     if (!img) return;
 
     if (privacyMode) {
-      showNotification("Unlock Privacy Mode to use images", "warning");
+      showNotification("Switch to Default Mode to use images", "warning");
       return;
     }
 
     await sendImageToTab(img);
   }
 
-  // Delete → delete
   if (e.key === "Delete" && selectedIndex !== -1) {
     const selectedId = items[selectedIndex].dataset.id;
     const img = await db.images.get(selectedId);
     if (!img) return;
 
-    if (img.privacy) {
+    if (privacyMode) {
       const record = await db.settings.get("privacyPassword");
       const entered = prompt("Enter privacy password to delete this image:");
       if (entered !== record?.value) {
@@ -497,8 +523,6 @@ function updateSelection(items, newIndex) {
   if (!newSelected) return;
   newSelected.classList.add("selected");
   selectedImageId = newSelected.dataset.id;
-
-  // Scroll into view if needed
   newSelected.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
 }
 
@@ -580,195 +604,106 @@ async function sendImageToTab(imageData) {
   }
 }
 
+// Privacy toggle handler
 privacyToggle.addEventListener("change", async () => {
   if (privacyToggle.checked) {
-    // User wants to LOCK Privacy Mode
+    // User wants to switch from DEFAULT to PRIVACY mode
     const record = await db.settings.get("privacyPassword");
+
     if (!record) {
-      showNotification("Please set a password first", "warning");
-      privacyToggle.checked = false;
-      setPasswordContainer.style.display = "block";
-      return;
-    }
-
-    privacyMode = true;
-    privacyLocked = true;
-    passwordContainer.style.display = "none";
-    setPasswordContainer.style.display = "none";
-    
-    if (unlockTimer) {
-      clearInterval(unlockTimer);
-    }
-    
-    loadGallery();
-    updateUIForPrivacyMode();
-    showNotification("Privacy Mode enabled", "success");
-
-  } else {
-    // User wants to UNLOCK Privacy Mode
-    const record = await db.settings.get("privacyPassword");
-    if (!record) {
-      showNotification("No password set", "warning");
-      return;
-    }
-
-    passwordContainer.style.display = "block";
-  }
-});
-
-privacySubmit.addEventListener("click", async () => {
-  const entered = privacyPasswordInput.value.trim();
-  const record = await db.settings.get("privacyPassword");
-
-  if (!record) {
-    showNotification("No password set!", "error");
-    return;
-  }
-
-  if (entered === record.value) {
-    privacyMode = false;
-    privacyLocked = false;
-    passwordContainer.style.display = "none";
-    privacyToggle.checked = false;
-    privacyPasswordInput.value = "";
-
-    // Save unlock timestamp
-    const unlockTime = new Date().toISOString();
-    await db.settings.put({ key: "privacyUnlockTime", value: unlockTime });
-
-    startUnlockTimer();
-    loadGallery();
-    updateUIForPrivacyMode();
-    showNotification("Privacy Mode unlocked for 1 day", "success");
-  } else {
-    showNotification("Incorrect password", "error");
-    privacyPasswordInput.value = "";
-  }
-});
-
-async function checkPrivacyExpiration() {
-  const unlockRecord = await db.settings.get("privacyUnlockTime");
-
-  if (unlockRecord) {
-    const unlockTime = new Date(unlockRecord.value);
-    const now = new Date();
-    const diffMs = now - unlockTime;
-    const diffMinutes = diffMs / (1000 * 60);
-
-    if (diffMinutes >= AUTO_LOCK_MINUTES) {
-      // Auto-lock after 24 hours
-      await lockPrivacyMode();
+      // No password set - show modal to set password
+      showPasswordModal("set");
+      privacyPasswordInput.placeholder = "Enter 4-digit password";
+      privacySubmit.onclick = async () => {
+        const newPass = privacyPasswordInput.value.trim();
+        
+        if (!/^\d{4}$/.test(newPass)) {
+          showNotification("Password must be exactly 4 digits (0–9)", "error");
+          return;
+        }
+        
+        await db.settings.put({ key: "privacyPassword", value: newPass });
+        passwordContainer.style.display = "none";
+        privacyPasswordInput.value = "";
+        
+        // Switch to privacy mode
+        await switchToPrivacyMode();
+        showNotification("Privacy Mode enabled with new password", "success");
+      };
     } else {
-      // Still valid
-      privacyMode = false;
-      privacyLocked = false;
-      privacyToggle.checked = false;
-      
-      // Calculate remaining time
-      const remainingMs = (AUTO_LOCK_MINUTES * 60 * 1000) - diffMs;
-      timeLeft = Math.floor(remainingMs / 1000);
-      
-      if (timeLeft > 0) {
-        startUnlockTimer();
-      }
+      // Password exists - prompt for password
+      showPasswordModal("unlock");
+      privacySubmit.onclick = async () => {
+        const entered = privacyPasswordInput.value.trim();
+        
+        if (entered === record.value) {
+          // Correct password - switch to privacy mode
+          passwordContainer.style.display = "none";
+          privacyPasswordInput.value = "";
+          await switchToPrivacyMode();
+          showNotification("Switched to Privacy Mode", "success");
+        } else {
+          showNotification("Incorrect password", "error");
+          privacyPasswordInput.value = "";
+        }
+      };
     }
   } else {
-    // No unlock record → locked
-    privacyMode = true;
-    privacyLocked = true;
-    privacyToggle.checked = true;
+    // User wants to switch from PRIVACY to DEFAULT mode
+    await switchToDefaultMode();
+    showNotification("Switched to Default Mode", "success");
   }
-}
+});
 
-async function lockPrivacyMode() {
+// Switch to privacy mode
+async function switchToPrivacyMode() {
   privacyMode = true;
-  privacyLocked = true;
-  privacyToggle.checked = true;
-
-  await db.settings.delete("privacyUnlockTime");
+  privacyLocked = false;
   
+  // Clear timer
   if (unlockTimer) {
     clearInterval(unlockTimer);
+    unlockTimer = null;
   }
-
+  
+  // Clear unlock time
+  await db.settings.delete("privacyUnlockTime");
+  
   loadGallery();
   updateUIForPrivacyMode();
-  showNotification("Privacy Mode auto-enabled (24 hours expired)", "info");
 }
 
-// Forgot password
-forgotPassword.addEventListener("click", async () => {
-  const confirmReset = confirm("Resetting password will delete all private images. Continue?");
-  if (!confirmReset) return;
-  
-  const privateImages = await db.images.where("privacy").equals(1).toArray();
-  for (const img of privateImages) {
-    await db.images.delete(img.id);
-  }
-  
-  await db.settings.delete("privacyPassword");
-  await db.settings.delete("privacyUnlockTime");
-  
+// Switch to default mode
+async function switchToDefaultMode() {
   privacyMode = false;
   privacyLocked = false;
-  privacyToggle.checked = false;
-  passwordContainer.style.display = "none";
-  setPasswordContainer.style.display = "block";
   
-  if (unlockTimer) {
-    clearInterval(unlockTimer);
-  }
+  // Set unlock time and start countdown
+  const unlockTime = new Date().toISOString();
+  await db.settings.put({ key: "privacyUnlockTime", value: unlockTime });
   
-  await loadGallery();
+  startUnlockTimer();
+  loadGallery();
   updateUIForPrivacyMode();
-  showNotification("Password reset. All private images have been deleted.", "warning");
-});
-
-// Show set password form
-setPasswordLink.addEventListener("click", () => {
-  setPasswordContainer.style.display = "block";
-  passwordContainer.style.display = "none";
-  privacyPasswordInput.value = "";
-});
-
-// Cancel set password
-cancelSetPassword.addEventListener("click", () => {
-  setPasswordContainer.style.display = "none";
-  newPasswordInput.value = "";
-  
-  if (privacyToggle.checked) {
-    privacyToggle.checked = false;
-  }
-});
-
-async function checkPassword() {
-  const record = await db.settings.get("privacyPassword");
-  if (!record) {
-    setPasswordContainer.style.display = "block";
-    passwordContainer.style.display = "none";
-  } else {
-    setPasswordContainer.style.display = "none";
-    passwordContainer.style.display = "none";
-  }
 }
 
-// Set new password
-setPasswordBtn.addEventListener("click", async () => {
-  const newPass = newPasswordInput.value.trim();
-  if (!newPass) {
-    showNotification("Password cannot be empty", "error");
-    return;
-  }
+// Check if password exists
+async function checkPassword() {
+  const record = await db.settings.get("privacyPassword");
+  return !!record;
+}
 
-  if (newPass.length < 4) {
-    showNotification("Password must be at least 4 characters", "warning");
-    return;
-  }
-
-  await db.settings.put({ key: "privacyPassword", value: newPass });
-  showNotification("Password set successfully!", "success");
-  newPasswordInput.value = "";
-  setPasswordContainer.style.display = "none";
+// Forgot password handler
+forgotPassword.addEventListener("click", async () => {
+  const confirmReset = confirm("Resetting password will require you to set a new one. Continue?");
+  if (!confirmReset) return;
+  
+  await db.settings.delete("privacyPassword");
+  
+  // Switch to default mode
+  await switchToDefaultMode();
+  
+  showNotification("Password reset. Set a new password to enable Privacy Mode.", "warning");
 });
 
 // Clear all images
@@ -776,13 +711,9 @@ clearAllBtn.addEventListener("click", async () => {
   const confirmClear = confirm("Are you sure you want to delete ALL images? This action cannot be undone.");
   if (!confirmClear) return;
   
-  const images = await db.images.toArray();
-  
-  const hasPrivateImages = images.some(img => img.privacy);
-  
-  if (hasPrivateImages) {
+  if (privacyMode) {
     const record = await db.settings.get("privacyPassword");
-    const entered = prompt("Private images found. Enter password to delete all images:");
+    const entered = prompt("Enter privacy password to delete all images:");
     
     if (entered !== record?.value) {
       showNotification("Wrong password. Deletion cancelled.", "error");
@@ -795,7 +726,7 @@ clearAllBtn.addEventListener("click", async () => {
   showNotification("All images deleted successfully.", "success");
 });
 
-// Auto-save unlock time periodically
+// Auto-save unlock time periodically in default mode
 setInterval(async () => {
   if (!privacyMode) {
     const unlockTime = new Date().toISOString();
