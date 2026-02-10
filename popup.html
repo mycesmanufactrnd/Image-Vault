@@ -28,7 +28,7 @@
       </div>
     </div>
     <p id="uploadMessage" class="upload-message">Select and upload the images of your choice</p>
-    
+
     <div class="storage-info">
       <div class="storage-bar">
         <div class="storage-fill" id="storageFill"></div>
@@ -36,6 +36,7 @@
       <div class="storage-text">Storage: <span id="storageText">0/6 images</span></div>
     </div>
   </div>
+  
 
   <div class="gallery-section">
     <div class="section-header">
@@ -65,6 +66,11 @@
       </div>
     </div>
 
+    <!--Add placeholder HTML (optional but nice UX)-->
+    <div id="privacyPlaceholder">
+      🔒  Gallery hidden — Privacy Mode is ON
+    </div>
+
     <div class="gallery" id="gallery">
       <div class="empty-state" id="emptyState">
         <i class="fas fa-images"></i>
@@ -74,27 +80,18 @@
     </div>
   </div>
 
-  <!-- SINGLE PASSWORD CONTAINER (used for both unlock and set password) -->
-  <div class="password-section">
-    <div class="password-entry" id="passwordContainer">
-      <h3><i class="fas fa-lock"></i> Privacy Mode Locked</h3>
-      <p>Enter password to unlock Privacy Mode</p>
-      <div class="password-input-group">
-        <input type="password" id="privacyPassword" placeholder="Enter password">
-        <button id="privacySubmit" class="btn-primary">
-          <i class="fas fa-unlock"></i> Unlock
-        </button>
-      </div>
-      <div class="password-actions">
-        <button class="btn-link" id="forgotPassword">Forgot Password?</button>
-      </div>
-    </div>
-  </div>
-
   <div class="footer">
     <div class="footer-info">
       <p class="privacy-status" id="privacyStatus">Privacy Mode: <span>Inactive</span></p>
       <p class="timer" id="privacyTimer"></p>
+      
+      <!-- Timer Setting Checkbox -->
+      <div class="timer-setting" id="timer-setting">
+        <label class="timer-checkbox-label">
+          <input type="checkbox" id="timerToggle" checked>
+          <span>Auto-lock Timer</span>
+        </label>
+      </div>
     </div>
     <button id="clearAllBtn" class="btn-danger">
       <i class="fas fa-trash-alt"></i> Clear All Images
@@ -102,9 +99,35 @@
     <p class="help-text"><small>Image Vault v2.3 • Auto-switches to Privacy Mode after 1 hour</small></p>
   </div>
 
-  <div class="notification" id="notification">
+   <div class="notification" id="notification">
     <span id="notificationText">Notification message</span>
   </div>
+
+  <!-- PASSWORD MODAL OVERLAY -->
+<div class="modal-overlay" id="passwordModal">
+  <div class="password-entry" id="passwordContainer">
+    <h3><i class="fas fa-lock"></i> Privacy Mode Locked</h3>
+    <p>Enter password to unlock Privacy Mode</p>
+
+    <div class="password-input-group">
+      <!-- TAC-style 4-digit input -->
+      <div class="tac-input-container">
+        <input type="password" class="tac-digit" maxlength="1" data-index="0" inputmode="numeric" pattern="[0-9]" autocomplete="off"/>
+        <input type="password" class="tac-digit" maxlength="1" data-index="1" inputmode="numeric" pattern="[0-9]" autocomplete="off"/>
+        <input type="password" class="tac-digit" maxlength="1" data-index="2" inputmode="numeric" pattern="[0-9]" autocomplete="off"/>
+        <input type="password" class="tac-digit" maxlength="1" data-index="3" inputmode="numeric" pattern="[0-9]" autocomplete="off"/>
+      </div>
+      <button id="privacySubmit" class="btn-primary">
+        <i class="fas fa-unlock"></i> Unlock
+      </button>
+    </div>
+
+    <div class="password-actions">
+      <button class="btn-link" id="forgotPassword">Forgot Password?</button>
+      <button class="btn-secondary" id="cancelPassword">Cancel</button>
+    </div>
+  </div>
+</div>
 
   <script src="dexie.min.js"></script>
   <script src="popup.js"></script>
