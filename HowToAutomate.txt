@@ -1,0 +1,4 @@
+1. APIS and services -> Credentials -> Create credentials (Desktop Apps)
+2. APIs and services -> OAuth consent screen -> Audience -> Add Test users (email)
+3. Run "node oauth-server.js" to get refresh token
+4. Run "node automation.js" to update
